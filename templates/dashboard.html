@@ -1,0 +1,1215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NGINX Access Log Analyzer</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <style>
+        .chart-container {
+            height: 400px;
+            margin: 20px 0;
+        }
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 10px 0;
+        }
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+        }
+        .loading {
+            text-align: center;
+            padding: 50px;
+        }
+        .attack-alert {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 5px 0;
+        }
+        .top-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .executive-summary {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+        .threat-item {
+            border-left: 3px solid #dc3545;
+            padding: 8px;
+            margin: 5px 0;
+            background: #fff;
+            border-radius: 4px;
+        }
+        .performance-metric {
+            text-align: center;
+            padding: 15px;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            border-radius: 8px;
+            margin: 5px 0;
+        }
+        .chart-loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">🚀 NGINX Access Log Analyzer</span>
+            <div class="d-flex">
+                <select id="daysSelect" class="form-select me-2" style="width: auto;">
+                    <option value="1">Last 1 day</option>
+                    <option value="3">Last 3 days</option>
+                    <option value="7" selected>Last 7 days</option>
+                    <option value="14">Last 14 days</option>
+                    <option value="30">Last 30 days</option>
+                </select>
+                <button id="loadBtn" class="btn btn-primary me-2">Load Logs</button>
+                <button id="exportBtn" class="btn btn-success">Export PDF</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3">Loading and analyzing logs...</p>
+        </div>
+
+        <div id="content" style="display: none;">
+            <!-- Summary Metrics -->
+            <div class="row">
+                <div class="col-md-2">
+                    <div class="metric-card">
+                        <div class="metric-value" id="totalRequests">-</div>
+                        <div>Total Requests</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="metric-card">
+                        <div class="metric-value" id="uniqueIPs">-</div>
+                        <div>Unique IPs</div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="metric-card">
+                        <div class="metric-value" id="errorRate">-</div>
+                        <div>Error Rate %</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-value" id="bandwidth">-</div>
+                        <div>Bandwidth (MB)</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="metric-card">
+                        <div class="metric-value" id="dateRange">-</div>
+                        <div>Date Range</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Traffic Over Time</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="trafficChart" class="chart-container"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Status Code Distribution</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="statusChart" class="chart-container"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Tables Row -->
+            <div class="row mt-4">
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6>Top Requested Paths</h6>
+                        </div>
+                        <div class="card-body top-list">
+                            <div id="topPaths">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6>Top IP Addresses</h6>
+                        </div>
+                        <div class="card-body top-list">
+                            <div id="topIPs">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6>Top Browsers</h6>
+                        </div>
+                        <div class="card-body top-list">
+                            <div id="topBrowsers">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6>Hourly Traffic Distribution</h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="hourlyChart" style="height: 200px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Advanced Analytics Section -->
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>🤖 Bot vs Human Traffic Analysis</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="botAnalysisChart" style="height: 300px;"></div>
+                            <div id="botBreakdown" class="mt-3"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>📊 Content Type Distribution</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="contentTypesChart" style="height: 300px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Threat Intelligence -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>🛡️ Advanced Threat Intelligence</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="alert alert-danger">
+                                        <h6>HIGH RISK</h6>
+                                        <div id="highRiskThreats">Loading...</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="alert alert-warning">
+                                        <h6>MEDIUM RISK</h6>
+                                        <div id="mediumRiskThreats">Loading...</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="alert alert-info">
+                                        <h6>LOW RISK</h6>
+                                        <div id="lowRiskThreats">Loading...</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="alert alert-secondary">
+                                        <h6>INFORMATIONAL</h6>
+                                        <div id="infoThreats">Loading...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Trends -->
+            <div class="row mt-4">
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>📈 Performance Trends</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="performanceTrendsChart" style="height: 400px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>⚡ Peak Performance Hours</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="peakHours" style="max-height: 350px; overflow-y: auto;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Geographic Analysis -->
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>🌍 Geographic Distribution</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="geoChart" style="height: 300px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>🚨 Error Analysis</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="errorAnalysisChart" style="height: 300px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real-time Insights -->
+            <div class="row mt-4">
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>⚡ Real-time Insights</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="realTimeMetrics">
+                                <div class="performance-metric">
+                                    <div class="metric-value" id="recentRequests">-</div>
+                                    <div>Requests (Last Hour)</div>
+                                </div>
+                                <div class="performance-metric">
+                                    <div class="metric-value" id="recentErrors">-</div>
+                                    <div>Errors (Last Hour)</div>
+                                </div>
+                                <div class="performance-metric">
+                                    <div class="metric-value" id="trafficVelocity">-</div>
+                                    <div>Traffic Velocity</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>🔮 Predictive Analytics</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="predictiveAnalytics">Loading predictions...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>📊 Business Intelligence</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="businessIntelligence">Loading BI data...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Advanced Security Intelligence -->
+            <div class="row mt-4">
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>🛡️ Advanced Security Intelligence</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>🔴 High Risk IPs</h6>
+                                    <div id="highRiskIPs" style="max-height: 300px; overflow-y: auto;"></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>🟡 Medium Risk IPs</h6>
+                                    <div id="mediumRiskIPs" style="max-height: 300px; overflow-y: auto;"></div>
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <h6>📋 Security Recommendations</h6>
+                                <div id="securityRecommendations"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>⏰ Attack Timeline</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="attackTimeline" style="max-height: 400px; overflow-y: auto;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Business Analytics -->
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>📈 Content Engagement</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="contentEngagementChart" style="height: 300px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>🔗 Traffic Sources</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="trafficSourcesChart" style="height: 300px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Conversion Funnel & Performance Prediction -->
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>🎯 Conversion Funnel</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="conversionFunnelChart" style="height: 300px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>📊 Resource Projections</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="resourceProjections">Loading projections...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Export Options -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>📋 Advanced Reports & Export</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="btn-group" role="group">
+                                <button id="exportDetailedBtn" class="btn btn-primary">📊 Export Detailed PDF Report</button>
+                                <button id="exportThreatBtn" class="btn btn-danger">🛡️ Export Security PDF Report</button>
+                                <button id="exportPerformanceBtn" class="btn btn-success">⚡ Export Performance PDF Report</button>
+                                <button id="generateSummaryBtn" class="btn btn-info">📄 Generate Executive Summary</button>
+                                <button id="exportComprehensiveBtn" class="btn btn-warning">🚀 Export Comprehensive PDF Report</button>
+                            </div>
+                            <div id="reportSummary" class="mt-3" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Security Alerts & Suspicious Activity -->
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>🔒 Security Alerts & Suspicious Activity</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="securityAlerts">Loading security analysis...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentData = null;
+
+        function showLoading() {
+            $('#loading').show();
+            $('#content').hide();
+        }
+
+        function hideLoading() {
+            $('#loading').hide();
+            $('#content').show();
+        }
+
+        function formatNumber(num) {
+            return new Intl.NumberFormat().format(num);
+        }
+
+        function loadLogs() {
+            showLoading();
+            const days = $('#daysSelect').val();
+            
+            $.get('/api/load_logs', {days: days})
+                .done(function(data) {
+                    console.log('Logs loaded:', data.logs_loaded);
+                    loadDashboardData();
+                })
+                .fail(function() {
+                    alert('Failed to load logs');
+                    hideLoading();
+                });
+        }
+
+        function loadDashboardData() {
+            // Load summary data
+            $.get('/api/summary')
+                .done(function(data) {
+                    currentData = data;
+                    updateSummaryMetrics(data);
+                    updateTopLists(data);
+                    loadCharts();
+                    loadSecurityAlerts();
+                    loadAdvancedAnalytics();
+                    loadThreatIntelligence();
+                    loadPerformanceMetrics();
+                    loadRealTimeInsights();
+                    loadPredictiveAnalytics();
+                    loadSecurityIntelligence();
+                    loadBusinessIntelligence();
+                    hideLoading();
+                })
+                .fail(function() {
+                    alert('Failed to load summary data');
+                    hideLoading();
+                });
+        }
+
+        function updateSummaryMetrics(data) {
+            $('#totalRequests').text(formatNumber(data.total_requests || 0));
+            $('#uniqueIPs').text(formatNumber(data.unique_ips || 0));
+            $('#errorRate').text(data.error_rate || 0);
+            $('#bandwidth').text(data.bandwidth_mb || 0);
+            $('#dateRange').text(data.date_range || 'No data');
+        }
+
+        function updateTopLists(data) {
+            // Top Paths
+            let pathsHtml = '';
+            for (const [path, count] of Object.entries(data.top_paths || {})) {
+                pathsHtml += `<div class="d-flex justify-content-between">
+                    <span class="text-truncate" title="${path}">${path}</span>
+                    <span class="badge bg-primary">${count}</span>
+                </div>`;
+            }
+            $('#topPaths').html(pathsHtml || 'No data');
+
+            // Top IPs
+            let ipsHtml = '';
+            for (const [ip, count] of Object.entries(data.top_ips || {})) {
+                ipsHtml += `<div class="d-flex justify-content-between">
+                    <span>${ip}</span>
+                    <span class="badge bg-warning">${count}</span>
+                </div>`;
+            }
+            $('#topIPs').html(ipsHtml || 'No data');
+
+            // Top Browsers
+            let browsersHtml = '';
+            for (const [browser, count] of Object.entries(data.top_user_agents || {})) {
+                browsersHtml += `<div class="d-flex justify-content-between">
+                    <span class="text-truncate" title="${browser}">${browser}</span>
+                    <span class="badge bg-info">${count}</span>
+                </div>`;
+            }
+            $('#topBrowsers').html(browsersHtml || 'No data');
+        }
+
+        function loadCharts() {
+            // Traffic over time chart
+            $.get('/api/traffic_over_time')
+                .done(function(data) {
+                    const trace = {
+                        x: data.timestamps,
+                        y: data.requests,
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        name: 'Requests',
+                        line: {color: '#17a2b8'}
+                    };
+
+                    const layout = {
+                        title: 'Requests Over Time',
+                        xaxis: {title: 'Time'},
+                        yaxis: {title: 'Number of Requests'},
+                        margin: {t: 40, r: 20, b: 40, l: 60}
+                    };
+
+                    Plotly.newPlot('trafficChart', [trace], layout, {responsive: true});
+                });
+
+            // Status code distribution
+            $.get('/api/status_distribution')
+                .done(function(data) {
+                    const trace = {
+                        labels: data.labels,
+                        values: data.values,
+                        type: 'pie',
+                        hole: 0.4,
+                        textinfo: 'label+percent'
+                    };
+
+                    const layout = {
+                        title: 'HTTP Status Codes',
+                        margin: {t: 40, r: 20, b: 40, l: 20}
+                    };
+
+                    Plotly.newPlot('statusChart', [trace], layout, {responsive: true});
+                });
+
+            // Hourly traffic distribution
+            if (currentData && currentData.hourly_traffic) {
+                const hours = Object.keys(currentData.hourly_traffic).map(h => parseInt(h));
+                const counts = Object.values(currentData.hourly_traffic);
+
+                const trace = {
+                    x: hours,
+                    y: counts,
+                    type: 'bar',
+                    marker: {color: '#28a745'}
+                };
+
+                const layout = {
+                    title: 'Traffic by Hour',
+                    xaxis: {title: 'Hour of Day'},
+                    yaxis: {title: 'Requests'},
+                    margin: {t: 40, r: 20, b: 40, l: 60}
+                };
+
+                Plotly.newPlot('hourlyChart', [trace], layout, {responsive: true});
+            }
+        }
+
+        function loadSecurityAlerts() {
+            $.get('/api/attacks')
+                .done(function(data) {
+                    let alertsHtml = '';
+                    
+                    if (data.length === 0) {
+                        alertsHtml = '<div class="alert alert-success">✅ No suspicious activity detected</div>';
+                    } else {
+                        data.forEach(function(alert) {
+                            alertsHtml += `
+                                <div class="attack-alert">
+                                    <h6>🚨 ${alert.type}</h6>
+                                    <p><strong>Count:</strong> ${alert.count} occurrences</p>
+                                    <p><strong>Sample URLs:</strong></p>
+                                    <ul>
+                                        ${alert.sample_urls.map(url => `<li><code>${url}</code></li>`).join('')}
+                                    </ul>
+                                </div>
+                            `;
+                        });
+                    }
+                    
+                    $('#securityAlerts').html(alertsHtml);
+                });
+        }
+
+        function loadAdvancedAnalytics() {
+            $.get('/api/advanced_analytics')
+                .done(function(data) {
+                    // Bot vs Human Traffic
+                    if (data.bot_analysis) {
+                        const botData = data.bot_analysis;
+                        const botTrace = {
+                            labels: ['Human Traffic', ...Object.keys(botData.bot_categories)],
+                            values: [botData.human_traffic, ...Object.values(botData.bot_categories)],
+                            type: 'pie',
+                            hole: 0.4,
+                            textinfo: 'label+percent',
+                            marker: {
+                                colors: ['#28a745', '#dc3545', '#fd7e14', '#6f42c1', '#20c997', '#6c757d']
+                            }
+                        };
+
+                        const botLayout = {
+                            title: 'Traffic Classification',
+                            margin: {t: 40, r: 20, b: 40, l: 20}
+                        };
+
+                        Plotly.newPlot('botAnalysisChart', [botTrace], botLayout, {responsive: true});
+
+                        // Bot breakdown text
+                        let botHtml = `
+                            <p><strong>Bot Traffic:</strong> ${botData.bot_percentage}% (${botData.total_bots} requests)</p>
+                            <p><strong>Human Traffic:</strong> ${(100 - botData.bot_percentage).toFixed(1)}% (${botData.human_traffic} requests)</p>
+                        `;
+                        $('#botBreakdown').html(botHtml);
+                    }
+
+                    // Content Types
+                    if (data.content_types) {
+                        const contentTrace = {
+                            labels: Object.keys(data.content_types),
+                            values: Object.values(data.content_types),
+                            type: 'pie',
+                            textinfo: 'label+percent'
+                        };
+
+                        const contentLayout = {
+                            title: 'Request Types',
+                            margin: {t: 40, r: 20, b: 40, l: 20}
+                        };
+
+                        Plotly.newPlot('contentTypesChart', [contentTrace], contentLayout, {responsive: true});
+                    }
+
+                    // Geographic Distribution
+                    if (data.geographic) {
+                        const geoTrace = {
+                            x: Object.keys(data.geographic),
+                            y: Object.values(data.geographic),
+                            type: 'bar',
+                            marker: {color: '#17a2b8'}
+                        };
+
+                        const geoLayout = {
+                            title: 'Geographic Distribution',
+                            xaxis: {title: 'Region'},
+                            yaxis: {title: 'Requests'},
+                            margin: {t: 40, r: 20, b: 40, l: 60}
+                        };
+
+                        Plotly.newPlot('geoChart', [geoTrace], geoLayout, {responsive: true});
+                    }
+
+                    // Error Analysis
+                    if (data.error_breakdown) {
+                        const errorData = [];
+                        const errorLabels = [];
+                        
+                        Object.entries(data.error_breakdown).forEach(([range, statuses]) => {
+                            Object.entries(statuses).forEach(([status, count]) => {
+                                errorLabels.push(`${status} (${range})`);
+                                errorData.push(count);
+                            });
+                        });
+
+                        if (errorData.length > 0) {
+                            const errorTrace = {
+                                x: errorLabels,
+                                y: errorData,
+                                type: 'bar',
+                                marker: {color: '#dc3545'}
+                            };
+
+                            const errorLayout = {
+                                title: 'Error Status Codes',
+                                xaxis: {title: 'Status Code'},
+                                yaxis: {title: 'Count'},
+                                margin: {t: 40, r: 20, b: 40, l: 60}
+                            };
+
+                            Plotly.newPlot('errorAnalysisChart', [errorTrace], errorLayout, {responsive: true});
+                        }
+                    }
+                });
+        }
+
+        function loadThreatIntelligence() {
+            $.get('/api/threat_intelligence')
+                .done(function(data) {
+                    // High Risk Threats
+                    let highRiskHtml = '';
+                    if (data.high_risk && data.high_risk.length > 0) {
+                        data.high_risk.forEach(threat => {
+                            highRiskHtml += `
+                                <div class="mb-2">
+                                    <strong>${threat.type}</strong><br>
+                                    <small>Count: ${threat.count}</small>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        highRiskHtml = '<small>No high-risk threats detected</small>';
+                    }
+                    $('#highRiskThreats').html(highRiskHtml);
+
+                    // Medium Risk Threats
+                    let mediumRiskHtml = '';
+                    if (data.medium_risk && data.medium_risk.length > 0) {
+                        data.medium_risk.forEach(threat => {
+                            mediumRiskHtml += `
+                                <div class="mb-2">
+                                    <strong>${threat.type}</strong><br>
+                                    <small>Count: ${threat.count}</small>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        mediumRiskHtml = '<small>No medium-risk threats detected</small>';
+                    }
+                    $('#mediumRiskThreats').html(mediumRiskHtml);
+
+                    // Low Risk Threats
+                    let lowRiskHtml = '';
+                    if (data.low_risk && data.low_risk.length > 0) {
+                        data.low_risk.forEach(threat => {
+                            lowRiskHtml += `
+                                <div class="mb-2">
+                                    <strong>${threat.type}</strong><br>
+                                    <small>Count: ${threat.count}</small>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        lowRiskHtml = '<small>No low-risk threats detected</small>';
+                    }
+                    $('#lowRiskThreats').html(lowRiskHtml);
+
+                    // Informational
+                    $('#infoThreats').html('<small>Threat analysis complete</small>');
+                });
+        }
+
+        function loadPerformanceMetrics() {
+            $.get('/api/performance_metrics')
+                .done(function(data) {
+                    // Performance Trends
+                    if (data.daily_trends && data.daily_trends.length > 0) {
+                        const dates = data.daily_trends.map(d => d.date);
+                        
+                        const requestsTrace = {
+                            x: dates,
+                            y: data.daily_trends.map(d => d.requests),
+                            type: 'scatter',
+                            mode: 'lines+markers',
+                            name: 'Requests',
+                            yaxis: 'y'
+                        };
+
+                        const bandwidthTrace = {
+                            x: dates,
+                            y: data.daily_trends.map(d => d.bandwidth_mb),
+                            type: 'scatter',
+                            mode: 'lines+markers',
+                            name: 'Bandwidth (MB)',
+                            yaxis: 'y2'
+                        };
+
+                        const errorTrace = {
+                            x: dates,
+                            y: data.daily_trends.map(d => d.error_rate),
+                            type: 'scatter',
+                            mode: 'lines+markers',
+                            name: 'Error Rate (%)',
+                            yaxis: 'y3'
+                        };
+
+                        const layout = {
+                            title: 'Daily Performance Trends',
+                            xaxis: {title: 'Date'},
+                            yaxis: {
+                                title: 'Requests',
+                                side: 'left'
+                            },
+                            yaxis2: {
+                                title: 'Bandwidth (MB)',
+                                overlaying: 'y',
+                                side: 'right'
+                            },
+                            yaxis3: {
+                                title: 'Error Rate (%)',
+                                overlaying: 'y',
+                                side: 'right',
+                                position: 0.85
+                            },
+                            margin: {t: 40, r: 100, b: 40, l: 60}
+                        };
+
+                        Plotly.newPlot('performanceTrendsChart', [requestsTrace, bandwidthTrace, errorTrace], layout, {responsive: true});
+                    }
+
+                    // Peak Hours
+                    if (data.peak_hours && data.peak_hours.length > 0) {
+                        let peakHtml = '<div class="list-group">';
+                        data.peak_hours.slice(0, 10).forEach((peak, index) => {
+                            peakHtml += `
+                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>${peak.date} ${peak.hour}</strong><br>
+                                        <small>${peak.bandwidth_mb} MB transferred</small>
+                                    </div>
+                                    <span class="badge bg-primary rounded-pill">${peak.requests}</span>
+                                </div>
+                            `;
+                        });
+                        peakHtml += '</div>';
+                        $('#peakHours').html(peakHtml);
+                    }
+                });
+        }
+
+        function exportDetailedReport() {
+            window.open('/api/export/pdf/summary', '_blank');
+        }
+
+        function exportThreatReport() {
+            window.open('/api/export/pdf/security', '_blank');
+        }
+
+        function exportPerformanceReport() {
+            window.open('/api/export/pdf/summary', '_blank');
+        }
+
+        function generateExecutiveSummary() {
+            Promise.all([
+                $.get('/api/summary'),
+                $.get('/api/advanced_analytics'),
+                $.get('/api/threat_intelligence'),
+                $.get('/api/performance_metrics')
+            ]).then(function([summary, analytics, threats, performance]) {
+                const totalThreats = (threats.high_risk?.length || 0) + 
+                                  (threats.medium_risk?.length || 0) + 
+                                  (threats.low_risk?.length || 0);
+
+                const summaryHtml = `
+                    <div class="executive-summary">
+                        <h5>📋 Executive Summary</h5>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Traffic Overview</h6>
+                                <ul>
+                                    <li><strong>Total Requests:</strong> ${formatNumber(summary.total_requests || 0)}</li>
+                                    <li><strong>Unique Visitors:</strong> ${formatNumber(summary.unique_ips || 0)}</li>
+                                    <li><strong>Error Rate:</strong> ${summary.error_rate || 0}%</li>
+                                    <li><strong>Bandwidth:</strong> ${summary.bandwidth_mb || 0} MB</li>
+                                    <li><strong>Bot Traffic:</strong> ${analytics.bot_analysis?.bot_percentage || 0}%</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Security Assessment</h6>
+                                <ul>
+                                    <li><strong>High Risk Threats:</strong> ${threats.high_risk?.length || 0}</li>
+                                    <li><strong>Medium Risk Threats:</strong> ${threats.medium_risk?.length || 0}</li>
+                                    <li><strong>Low Risk Threats:</strong> ${threats.low_risk?.length || 0}</li>
+                                    <li><strong>Total Security Alerts:</strong> ${totalThreats}</li>
+                                    <li><strong>Risk Level:</strong> ${totalThreats > 10 ? 'HIGH' : totalThreats > 5 ? 'MEDIUM' : 'LOW'}</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <h6>Key Recommendations</h6>
+                            <ul>
+                                ${totalThreats > 0 ? '<li>Review and address identified security threats</li>' : '<li>✅ No immediate security concerns detected</li>'}
+                                ${summary.error_rate > 10 ? '<li>⚠️ High error rate detected - investigate server issues</li>' : '<li>✅ Error rate within acceptable limits</li>'}
+                                ${analytics.bot_analysis?.bot_percentage > 70 ? '<li>⚠️ High bot traffic - consider implementing bot protection</li>' : '<li>✅ Bot traffic levels normal</li>'}
+                                <li>Continue monitoring for unusual patterns</li>
+                                <li>Regular security audits recommended</li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+
+                $('#reportSummary').html(summaryHtml).show();
+            });
+        }
+
+        function loadRealTimeInsights() {
+            $.get('/api/real_time_insights')
+                .done(function(data) {
+                    if (data.recent_activity) {
+                        $('#recentRequests').text(formatNumber(data.recent_activity.requests_last_hour || 0));
+                        $('#recentErrors').text(formatNumber(data.recent_activity.errors_last_hour || 0));
+                    }
+                    
+                    if (data.traffic_velocity) {
+                        const velocity = data.traffic_velocity;
+                        let velocityText = `${velocity.avg_requests_per_hour}/hr`;
+                        if (velocity.anomaly_detected) {
+                            velocityText += ' ⚠️';
+                        }
+                        $('#trafficVelocity').text(velocityText);
+                    }
+                });
+        }
+
+        function loadPredictiveAnalytics() {
+            $.get('/api/predictive_analytics')
+                .done(function(data) {
+                    let predictiveHtml = '';
+                    
+                    if (data.traffic_prediction) {
+                        predictiveHtml += `
+                            <div class="performance-metric">
+                                <div class="metric-value">${data.traffic_prediction.predicted_next_hour_requests}</div>
+                                <div>Predicted Next Hour</div>
+                            </div>
+                        `;
+                    }
+                    
+                    if (data.trend_analysis) {
+                        const trend = data.trend_analysis;
+                        const trendIcon = trend.trend_direction === 'increasing' ? '📈' : 
+                                        trend.trend_direction === 'decreasing' ? '📉' : '➡️';
+                        predictiveHtml += `
+                            <div class="performance-metric">
+                                <div class="metric-value">${trendIcon}</div>
+                                <div>${trend.trend_direction} (${trend.trend_strength})</div>
+                            </div>
+                        `;
+                    }
+                    
+                    $('#predictiveAnalytics').html(predictiveHtml);
+                    
+                    // Resource projections
+                    if (data.resource_projection) {
+                        const proj = data.resource_projection;
+                        const projHtml = `
+                            <div class="performance-metric">
+                                <div class="metric-value">${proj.monthly_bandwidth_projection_gb}</div>
+                                <div>Monthly Bandwidth (GB)</div>
+                            </div>
+                            <div class="performance-metric">
+                                <div class="metric-value">${proj.storage_requirement_estimate_gb}</div>
+                                <div>Storage Needed (GB)</div>
+                            </div>
+                        `;
+                        $('#resourceProjections').html(projHtml);
+                    }
+                });
+        }
+
+        function loadSecurityIntelligence() {
+            $.get('/api/security_intelligence')
+                .done(function(data) {
+                    // High Risk IPs
+                    let highRiskHtml = '';
+                    if (data.ip_risk_analysis && data.ip_risk_analysis.high_risk_ips.length > 0) {
+                        data.ip_risk_analysis.high_risk_ips.forEach(ip => {
+                            highRiskHtml += `
+                                <div class="threat-item">
+                                    <strong>${ip.ip}</strong> (Score: ${ip.risk_score})<br>
+                                    <small>Requests: ${ip.total_requests}, Failure: ${ip.failure_rate}</small><br>
+                                    <small>${ip.risk_factors.slice(0, 2).join(', ')}</small>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        highRiskHtml = '<small class="text-muted">No high-risk IPs detected</small>';
+                    }
+                    $('#highRiskIPs').html(highRiskHtml);
+
+                    // Medium Risk IPs
+                    let mediumRiskHtml = '';
+                    if (data.ip_risk_analysis && data.ip_risk_analysis.medium_risk_ips.length > 0) {
+                        data.ip_risk_analysis.medium_risk_ips.forEach(ip => {
+                            mediumRiskHtml += `
+                                <div class="threat-item">
+                                    <strong>${ip.ip}</strong> (Score: ${ip.risk_score})<br>
+                                    <small>Requests: ${ip.total_requests}, Failure: ${ip.failure_rate}</small>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        mediumRiskHtml = '<small class="text-muted">No medium-risk IPs detected</small>';
+                    }
+                    $('#mediumRiskIPs').html(mediumRiskHtml);
+
+                    // Security Recommendations
+                    let recHtml = '';
+                    if (data.security_recommendations && data.security_recommendations.length > 0) {
+                        data.security_recommendations.forEach(rec => {
+                            const badgeClass = rec.priority === 'HIGH' ? 'bg-danger' : 'bg-warning';
+                            recHtml += `
+                                <div class="alert alert-${rec.priority === 'HIGH' ? 'danger' : 'warning'} alert-dismissible">
+                                    <span class="badge ${badgeClass}">${rec.priority}</span>
+                                    <strong>${rec.category}:</strong> ${rec.description}<br>
+                                    <small><strong>Action:</strong> ${rec.action}</small>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        recHtml = '<div class="alert alert-success">✅ No security recommendations at this time</div>';
+                    }
+                    $('#securityRecommendations').html(recHtml);
+
+                    // Attack Timeline
+                    let timelineHtml = '';
+                    if (data.attack_timeline && data.attack_timeline.length > 0) {
+                        data.attack_timeline.forEach(attack => {
+                            const date = new Date(attack.timestamp);
+                            timelineHtml += `
+                                <div class="threat-item">
+                                    <small>${date.toLocaleString()}</small><br>
+                                    <strong>${attack.ip}</strong><br>
+                                    <code>${attack.url.substring(0, 50)}...</code><br>
+                                    <span class="badge bg-danger">Status: ${attack.status}</span>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        timelineHtml = '<small class="text-muted">No recent attacks detected</small>';
+                    }
+                    $('#attackTimeline').html(timelineHtml);
+                });
+        }
+
+        function loadBusinessIntelligence() {
+            $.get('/api/business_intelligence')
+                .done(function(data) {
+                    // Business Intelligence Summary
+                    let biHtml = '';
+                    if (data.content_analytics) {
+                        const analytics = data.content_analytics;
+                        biHtml += `
+                            <div class="performance-metric">
+                                <div class="metric-value">${analytics.pages_per_visitor}</div>
+                                <div>Pages per Visitor</div>
+                            </div>
+                            <div class="performance-metric">
+                                <div class="metric-value">${analytics.unique_visitors}</div>
+                                <div>Unique Visitors</div>
+                            </div>
+                        `;
+                    }
+                    $('#businessIntelligence').html(biHtml);
+
+                    // Content Engagement Chart
+                    if (data.content_analytics && data.content_analytics.top_content.length > 0) {
+                        const content = data.content_analytics.top_content.slice(0, 10);
+                        const contentTrace = {
+                            x: content.map(c => c.path.substring(0, 30) + (c.path.length > 30 ? '...' : '')),
+                            y: content.map(c => c.engagement_score),
+                            type: 'bar',
+                            marker: {color: '#28a745'},
+                            text: content.map(c => `Views: ${c.views}, Visitors: ${c.unique_visitors}`),
+                            textposition: 'outside'
+                        };
+
+                        const contentLayout = {
+                            title: 'Top Content by Engagement',
+                            xaxis: {title: 'Content Path'},
+                            yaxis: {title: 'Engagement Score'},
+                            margin: {t: 40, r: 20, b: 100, l: 60}
+                        };
+
+                        Plotly.newPlot('contentEngagementChart', [contentTrace], contentLayout, {responsive: true});
+                    }
+
+                    // Traffic Sources Chart
+                    if (data.traffic_sources) {
+                        const sourceTrace = {
+                            labels: Object.keys(data.traffic_sources),
+                            values: Object.values(data.traffic_sources),
+                            type: 'pie',
+                            textinfo: 'label+percent'
+                        };
+
+                        const sourceLayout = {
+                            title: 'Traffic Sources',
+                            margin: {t: 40, r: 20, b: 40, l: 20}
+                        };
+
+                        Plotly.newPlot('trafficSourcesChart', [sourceTrace], sourceLayout, {responsive: true});
+                    }
+
+                    // Conversion Funnel
+                    if (data.conversion_funnel) {
+                        const funnel = data.conversion_funnel;
+                        const funnelTrace = {
+                            x: Object.keys(funnel),
+                            y: Object.values(funnel),
+                            type: 'bar',
+                            marker: {
+                                color: ['#007bff', '#28a745', '#ffc107', '#dc3545']
+                            }
+                        };
+
+                        const funnelLayout = {
+                            title: 'User Journey Funnel',
+                            xaxis: {title: 'Funnel Step'},
+                            yaxis: {title: 'Count'},
+                            margin: {t: 40, r: 20, b: 40, l: 60}
+                        };
+
+                        Plotly.newPlot('conversionFunnelChart', [funnelTrace], funnelLayout, {responsive: true});
+                    }
+                });
+        }
+
+        function exportComprehensiveReport() {
+            window.open('/api/export/pdf/comprehensive', '_blank');
+        }
+
+        function exportData() {
+            window.open('/api/export/pdf/summary', '_blank');
+        }
+
+        // Event handlers
+        $(document).ready(function() {
+            $('#loadBtn').click(loadLogs);
+            $('#exportBtn').click(exportData);
+            $('#exportDetailedBtn').click(exportDetailedReport);
+            $('#exportThreatBtn').click(exportThreatReport);
+            $('#exportPerformanceBtn').click(exportPerformanceReport);
+            $('#generateSummaryBtn').click(generateExecutiveSummary);
+            $('#exportComprehensiveBtn').click(exportComprehensiveReport);
+            
+            // Auto-load on page load
+            loadLogs();
+        });
+    </script>
+</body>
+</html>
