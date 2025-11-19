@@ -9,6 +9,7 @@ A comprehensive Python Flask web application for analyzing NGINX access logs wit
 ## 📋 Table of Contents
 
 - [Features](#-features)
+- [Screenshots](#-screenshots)
 - [Quick Start](#-quick-start)
 - [Installation](#-installation)
 - [Usage](#-usage)
@@ -61,6 +62,20 @@ A comprehensive Python Flask web application for analyzing NGINX access logs wit
 - **Real-time alerts** for suspicious activity
 - **Dynamic dashboard** with auto-refresh
 - **Interactive charts** with drill-down capabilities
+
+## 📸 Screenshots
+
+### Main Dashboard
+![Dashboard Overview](Screenshots/Screenshot1.png)
+*The main analytics dashboard showing real-time traffic monitoring, geographic IP analysis, and key performance metrics.*
+
+### Security Analysis
+![Security Intelligence](Screenshots/Screenshot2.png)
+*Advanced threat detection dashboard with attack pattern analysis and security risk scoring.*
+
+### Detailed Analytics
+![Comprehensive Analytics](Screenshots/Screenshot3.png)
+*Detailed analytics view with traffic patterns, user agent detection, and business intelligence metrics.*
 
 ## 🚀 Quick Start
 

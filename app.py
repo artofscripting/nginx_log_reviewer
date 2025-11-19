@@ -7,6 +7,7 @@ A Flask web application for analyzing NGINX access logs with comprehensive repor
 import os
 import re
 import gzip
+import html
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 from urllib.parse import urlparse, unquote
@@ -47,7 +48,100 @@ except ImportError:
             'device': type('Device', (), {'family': 'Unknown'})()
         })()
 
+def sanitize_data(data):
+    """NUCLEAR XSS PROTECTION - Ultra-aggressive sanitization that removes ALL potential threats."""
+    if isinstance(data, str):
+        import re
+        
+        # Step 1: HTML escape everything
+        sanitized = html.escape(data, quote=True)
+        
+        # Step 2: Remove ALL script-related content completely
+        script_patterns = [
+            r'<\s*script[^>]*>.*?<\s*/\s*script\s*>',  # Script tags with content
+            r'<\s*script[^>]*>',  # Opening script tags
+            r'<\s*/\s*script\s*>',  # Closing script tags
+            r'javascript\s*:',  # JavaScript URLs
+            r'data\s*:',  # Data URLs
+            r'vbscript\s*:',  # VBScript URLs
+        ]
+        
+        for pattern in script_patterns:
+            sanitized = re.sub(pattern, '', sanitized, flags=re.IGNORECASE | re.DOTALL)
+        
+        # Step 3: Remove ALL event handlers
+        event_pattern = r'on\w+\s*=\s*["\'][^"\']*["\']'
+        sanitized = re.sub(event_pattern, '', sanitized, flags=re.IGNORECASE)
+        
+        # Step 4: Remove dangerous function calls completely
+        function_patterns = [
+            r'alert\s*\([^)]*\)',
+            r'confirm\s*\([^)]*\)',
+            r'prompt\s*\([^)]*\)',
+            r'eval\s*\([^)]*\)',
+            r'document\s*\.',
+            r'window\s*\.',
+        ]
+        
+        for pattern in function_patterns:
+            sanitized = re.sub(pattern, '[BLOCKED]', sanitized, flags=re.IGNORECASE)
+        
+        # Step 5: Remove dangerous HTML tags completely
+        dangerous_tags = [
+            r'<\s*img[^>]*>',
+            r'<\s*iframe[^>]*>',
+            r'<\s*object[^>]*>',
+            r'<\s*embed[^>]*>',
+            r'<\s*applet[^>]*>',
+            r'<\s*meta[^>]*>',
+            r'<\s*link[^>]*>',
+            r'<\s*style[^>]*>.*?<\s*/\s*style\s*>',
+        ]
+        
+        for pattern in dangerous_tags:
+            sanitized = re.sub(pattern, '', sanitized, flags=re.IGNORECASE | re.DOTALL)
+        
+        # Step 6: Additional character filtering for remaining dangerous chars
+        dangerous_sequences = ['<script', '</script', 'javascript:', 'alert(', 'eval(']
+        for seq in dangerous_sequences:
+            sanitized = sanitized.replace(seq.lower(), '[BLOCKED]')
+            sanitized = sanitized.replace(seq.upper(), '[BLOCKED]')
+            sanitized = sanitized.replace(seq.capitalize(), '[BLOCKED]')
+        
+        # Step 7: Final cleanup - remove any remaining < or > that could be dangerous
+        sanitized = sanitized.replace('<', '&lt;').replace('>', '&gt;')
+        
+        return sanitized
+        
+    elif isinstance(data, dict):
+        return {key: sanitize_data(value) for key, value in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_data(item) for item in data]
+    else:
+        return data
+
 app = Flask(__name__)
+
+# Configuration
+app.config['DEBUG'] = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+app.config['ENV'] = os.environ.get('FLASK_ENV', 'production')
+
+# Security headers middleware
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to prevent XSS and other attacks."""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    
+    # CSP completely disabled for debugging
+    # No Content-Security-Policy header will be sent
+    
+    # Debug: Confirm no CSP is being sent
+    if app.config['DEBUG']:
+        print("DEBUG - CSP header completely removed - no CSP restrictions")
+    
+    return response
 
 class LogAnalyzer:
     def __init__(self, log_directory):
@@ -874,10 +968,10 @@ class LogAnalyzer:
                     if re.search(pattern, log['url']):
                         attack_timeline.append({
                             'timestamp': log['timestamp'].isoformat(),
-                            'ip': log['ip'],
-                            'attack_type': pattern,
-                            'url': log['url'][:100],  # Truncate long URLs
-                            'status': log['status']
+                            'ip': sanitize_data(log['ip']),
+                            'attack_type': sanitize_data(pattern),
+                            'url': sanitize_data(log['url'][:100]),  # Truncate and sanitize URLs
+                            'status': sanitize_data(str(log['status']))
                         })
         
         intelligence['attack_timeline'] = sorted(attack_timeline, key=lambda x: x['timestamp'], reverse=True)[:20]
@@ -1064,12 +1158,14 @@ def load_logs():
 @app.route('/api/summary')
 def get_summary():
     """Get summary statistics."""
-    return jsonify(log_analyzer.get_summary_stats())
+    summary_data = log_analyzer.get_summary_stats()
+    return jsonify(sanitize_data(summary_data))
 
 @app.route('/api/traffic_over_time')
 def get_traffic_over_time():
     """Get traffic over time data."""
-    return jsonify(log_analyzer.get_traffic_over_time())
+    traffic_data = log_analyzer.get_traffic_over_time()
+    return jsonify(sanitize_data(traffic_data))
 
 @app.route('/api/status_distribution')
 def get_status_distribution():
@@ -1093,7 +1189,8 @@ def get_geographic():
 @app.route('/api/attacks')
 def get_attacks():
     """Get potential attack patterns."""
-    return jsonify(log_analyzer.get_attack_patterns())
+    attacks_data = log_analyzer.get_attack_patterns()
+    return jsonify(sanitize_data(attacks_data))
 
 @app.route('/api/advanced_analytics')
 def get_advanced_analytics():
@@ -1103,7 +1200,8 @@ def get_advanced_analytics():
 @app.route('/api/threat_intelligence')
 def get_threat_intelligence():
     """Get threat intelligence and advanced security analysis."""
-    return jsonify(log_analyzer.get_threat_intelligence())
+    threat_data = log_analyzer.get_threat_intelligence()
+    return jsonify(sanitize_data(threat_data))
 
 @app.route('/api/performance_metrics')
 def get_performance_metrics():

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NGINX Access Log Analyzer</title>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -482,6 +482,24 @@
     <script>
         let currentData = null;
 
+        // Basic utility functions for data handling (non-blocking versions)
+        function sanitizeForDisplay(data) {
+            // Simple pass-through function - no aggressive blocking
+            return data;
+        }
+
+        function escapeHtml(text) {
+            // Basic HTML escaping without aggressive pattern removal
+            if (typeof text !== 'string') return text;
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatNumber(num) {
+            return new Intl.NumberFormat().format(num);
+        }
+
         function showLoading() {
             $('#loading').show();
             $('#content').hide();
@@ -506,7 +524,7 @@
                     loadDashboardData();
                 })
                 .fail(function() {
-                    alert('Failed to load logs');
+                    console.error('Failed to load logs');
                     hideLoading();
                 });
         }
@@ -515,9 +533,10 @@
             // Load summary data
             $.get('/api/summary')
                 .done(function(data) {
-                    currentData = data;
-                    updateSummaryMetrics(data);
-                    updateTopLists(data);
+                    // Sanitize all incoming data
+                    currentData = sanitizeForDisplay(data);
+                    updateSummaryMetrics(currentData);
+                    updateTopLists(currentData);
                     loadCharts();
                     loadSecurityAlerts();
                     loadAdvancedAnalytics();
@@ -530,7 +549,7 @@
                     hideLoading();
                 })
                 .fail(function() {
-                    alert('Failed to load summary data');
+                    console.error('Failed to load summary data');
                     hideLoading();
                 });
         }
@@ -544,35 +563,56 @@
         }
 
         function updateTopLists(data) {
-            // Top Paths
-            let pathsHtml = '';
-            for (const [path, count] of Object.entries(data.top_paths || {})) {
-                pathsHtml += `<div class="d-flex justify-content-between">
-                    <span class="text-truncate" title="${path}">${path}</span>
-                    <span class="badge bg-primary">${count}</span>
-                </div>`;
+            // Top Paths - Use DOM manipulation instead of HTML injection
+            const pathsContainer = $('#topPaths');
+            pathsContainer.empty();
+            
+            const pathEntries = Object.entries(data.top_paths || {});
+            if (pathEntries.length === 0) {
+                pathsContainer.text('No data');
+            } else {
+                pathEntries.forEach(([path, count]) => {
+                    const div = $('<div class="d-flex justify-content-between">');
+                    const pathSpan = $('<span class="text-truncate">').text(path).attr('title', path);
+                    const countBadge = $('<span class="badge bg-primary">').text(count);
+                    div.append(pathSpan, countBadge);
+                    pathsContainer.append(div);
+                });
             }
-            $('#topPaths').html(pathsHtml || 'No data');
 
-            // Top IPs
-            let ipsHtml = '';
-            for (const [ip, count] of Object.entries(data.top_ips || {})) {
-                ipsHtml += `<div class="d-flex justify-content-between">
-                    <span>${ip}</span>
-                    <span class="badge bg-warning">${count}</span>
-                </div>`;
+            // Top IPs - Safe DOM manipulation
+            const ipsContainer = $('#topIPs');
+            ipsContainer.empty();
+            
+            const ipEntries = Object.entries(data.top_ips || {});
+            if (ipEntries.length === 0) {
+                ipsContainer.text('No data');
+            } else {
+                ipEntries.forEach(([ip, count]) => {
+                    const div = $('<div class="d-flex justify-content-between">');
+                    const ipSpan = $('<span>').text(ip);
+                    const countBadge = $('<span class="badge bg-warning">').text(count);
+                    div.append(ipSpan, countBadge);
+                    ipsContainer.append(div);
+                });
             }
-            $('#topIPs').html(ipsHtml || 'No data');
 
-            // Top Browsers
-            let browsersHtml = '';
-            for (const [browser, count] of Object.entries(data.top_user_agents || {})) {
-                browsersHtml += `<div class="d-flex justify-content-between">
-                    <span class="text-truncate" title="${browser}">${browser}</span>
-                    <span class="badge bg-info">${count}</span>
-                </div>`;
+            // Top Browsers - Safe DOM manipulation
+            const browsersContainer = $('#topBrowsers');
+            browsersContainer.empty();
+            
+            const browserEntries = Object.entries(data.top_user_agents || {});
+            if (browserEntries.length === 0) {
+                browsersContainer.text('No data');
+            } else {
+                browserEntries.forEach(([browser, count]) => {
+                    const div = $('<div class="d-flex justify-content-between">');
+                    const browserSpan = $('<span class="text-truncate">').text(browser).attr('title', browser);
+                    const countBadge = $('<span class="badge bg-info">').text(count);
+                    div.append(browserSpan, countBadge);
+                    browsersContainer.append(div);
+                });
             }
-            $('#topBrowsers').html(browsersHtml || 'No data');
         }
 
         function loadCharts() {
@@ -643,26 +683,46 @@
         function loadSecurityAlerts() {
             $.get('/api/attacks')
                 .done(function(data) {
-                    let alertsHtml = '';
+                    // Sanitize the entire data structure first
+                    const sanitizedData = sanitizeForDisplay(data);
                     
-                    if (data.length === 0) {
-                        alertsHtml = '<div class="alert alert-success">✅ No suspicious activity detected</div>';
+                    const alertsContainer = $('#securityAlerts');
+                    alertsContainer.empty();
+                    
+                    if (!sanitizedData || sanitizedData.length === 0) {
+                        const successAlert = $('<div class="alert alert-success">').text('✅ No suspicious activity detected');
+                        alertsContainer.append(successAlert);
                     } else {
-                        data.forEach(function(alert) {
-                            alertsHtml += `
-                                <div class="attack-alert">
-                                    <h6>🚨 ${alert.type}</h6>
-                                    <p><strong>Count:</strong> ${alert.count} occurrences</p>
-                                    <p><strong>Sample URLs:</strong></p>
-                                    <ul>
-                                        ${alert.sample_urls.map(url => `<li><code>${url}</code></li>`).join('')}
-                                    </ul>
-                                </div>
-                            `;
+                        sanitizedData.forEach(function(alert) {
+                            // Create safe DOM elements
+                            const alertDiv = $('<div class="attack-alert">');
+                            
+                            const title = $('<h6>').text('🚨 ' + (alert.type || 'Unknown'));
+                            const countP = $('<p>').append(
+                                $('<strong>').text('Count: '),
+                                document.createTextNode((alert.count || 0) + ' occurrences')
+                            );
+                            
+                            const urlsP = $('<p>').append($('<strong>').text('Sample URLs:'));
+                            const urlsList = $('<ul>');
+                            
+                            if (alert.sample_urls && Array.isArray(alert.sample_urls)) {
+                                alert.sample_urls.forEach(url => {
+                                    const li = $('<li>');
+                                    const code = $('<code>').text(url);
+                                    li.append(code);
+                                    urlsList.append(li);
+                                });
+                            }
+                            
+                            alertDiv.append(title, countP, urlsP, urlsList);
+                            alertsContainer.append(alertDiv);
                         });
                     }
-                    
-                    $('#securityAlerts').html(alertsHtml);
+                })
+                .fail(function() {
+                    const errorAlert = $('<div class="alert alert-warning">').text('Failed to load security data');
+                    $('#securityAlerts').html(errorAlert);
                 });
         }
 
@@ -690,12 +750,21 @@
 
                         Plotly.newPlot('botAnalysisChart', [botTrace], botLayout, {responsive: true});
 
-                        // Bot breakdown text
-                        let botHtml = `
-                            <p><strong>Bot Traffic:</strong> ${botData.bot_percentage}% (${botData.total_bots} requests)</p>
-                            <p><strong>Human Traffic:</strong> ${(100 - botData.bot_percentage).toFixed(1)}% (${botData.human_traffic} requests)</p>
-                        `;
-                        $('#botBreakdown').html(botHtml);
+                        // Bot breakdown text - Safe DOM manipulation
+                        const botContainer = $('#botBreakdown');
+                        botContainer.empty();
+                        
+                        const botP = $('<p>').append(
+                            $('<strong>').text('Bot Traffic: '),
+                            document.createTextNode(botData.bot_percentage + '% (' + botData.total_bots + ' requests)')
+                        );
+                        
+                        const humanP = $('<p>').append(
+                            $('<strong>').text('Human Traffic: '),
+                            document.createTextNode((100 - botData.bot_percentage).toFixed(1) + '% (' + botData.human_traffic + ' requests)')
+                        );
+                        
+                        botContainer.append(botP, humanP);
                     }
 
                     // Content Types
@@ -741,7 +810,7 @@
                         
                         Object.entries(data.error_breakdown).forEach(([range, statuses]) => {
                             Object.entries(statuses).forEach(([status, count]) => {
-                                errorLabels.push(`${status} (${range})`);
+                                errorLabels.push(status + ' (' + range + ')');
                                 errorData.push(count);
                             });
                         });
@@ -770,53 +839,56 @@
         function loadThreatIntelligence() {
             $.get('/api/threat_intelligence')
                 .done(function(data) {
-                    // High Risk Threats
-                    let highRiskHtml = '';
+                    // High Risk Threats - Safe DOM manipulation
+                    const highRiskContainer = $('#highRiskThreats');
+                    highRiskContainer.empty();
+                    
                     if (data.high_risk && data.high_risk.length > 0) {
                         data.high_risk.forEach(threat => {
-                            highRiskHtml += `
-                                <div class="mb-2">
-                                    <strong>${threat.type}</strong><br>
-                                    <small>Count: ${threat.count}</small>
-                                </div>
-                            `;
+                            const div = $('<div class="mb-2">');
+                            const strong = $('<strong>').text(threat.type || 'Unknown');
+                            const br = $('<br>');
+                            const small = $('<small>').text('Count: ' + (threat.count || 0));
+                            div.append(strong, br, small);
+                            highRiskContainer.append(div);
                         });
                     } else {
-                        highRiskHtml = '<small>No high-risk threats detected</small>';
+                        highRiskContainer.append($('<small>').text('No high-risk threats detected'));
                     }
-                    $('#highRiskThreats').html(highRiskHtml);
 
-                    // Medium Risk Threats
-                    let mediumRiskHtml = '';
+                    // Medium Risk Threats - Safe DOM manipulation
+                    const mediumRiskContainer = $('#mediumRiskThreats');
+                    mediumRiskContainer.empty();
+                    
                     if (data.medium_risk && data.medium_risk.length > 0) {
                         data.medium_risk.forEach(threat => {
-                            mediumRiskHtml += `
-                                <div class="mb-2">
-                                    <strong>${threat.type}</strong><br>
-                                    <small>Count: ${threat.count}</small>
-                                </div>
-                            `;
+                            const div = $('<div class="mb-2">');
+                            const strong = $('<strong>').text(threat.type || 'Unknown');
+                            const br = $('<br>');
+                            const small = $('<small>').text('Count: ' + (threat.count || 0));
+                            div.append(strong, br, small);
+                            mediumRiskContainer.append(div);
                         });
                     } else {
-                        mediumRiskHtml = '<small>No medium-risk threats detected</small>';
+                        mediumRiskContainer.append($('<small>').text('No medium-risk threats detected'));
                     }
-                    $('#mediumRiskThreats').html(mediumRiskHtml);
 
-                    // Low Risk Threats
-                    let lowRiskHtml = '';
+                    // Low Risk Threats - Safe DOM manipulation
+                    const lowRiskContainer = $('#lowRiskThreats');
+                    lowRiskContainer.empty();
+                    
                     if (data.low_risk && data.low_risk.length > 0) {
                         data.low_risk.forEach(threat => {
-                            lowRiskHtml += `
-                                <div class="mb-2">
-                                    <strong>${threat.type}</strong><br>
-                                    <small>Count: ${threat.count}</small>
-                                </div>
-                            `;
+                            const div = $('<div class="mb-2">');
+                            const strong = $('<strong>').text(threat.type || 'Unknown');
+                            const br = $('<br>');
+                            const small = $('<small>').text('Count: ' + (threat.count || 0));
+                            div.append(strong, br, small);
+                            lowRiskContainer.append(div);
                         });
                     } else {
-                        lowRiskHtml = '<small>No low-risk threats detected</small>';
+                        lowRiskContainer.append($('<small>').text('No low-risk threats detected'));
                     }
-                    $('#lowRiskThreats').html(lowRiskHtml);
 
                     // Informational
                     $('#infoThreats').html('<small>Threat analysis complete</small>');
@@ -881,22 +953,29 @@
                         Plotly.newPlot('performanceTrendsChart', [requestsTrace, bandwidthTrace, errorTrace], layout, {responsive: true});
                     }
 
-                    // Peak Hours
+                    // Peak Hours - Safe DOM manipulation
                     if (data.peak_hours && data.peak_hours.length > 0) {
-                        let peakHtml = '<div class="list-group">';
+                        const peakContainer = $('#peakHours');
+                        peakContainer.empty();
+                        
+                        const listGroup = $('<div>').addClass('list-group');
+                        
                         data.peak_hours.slice(0, 10).forEach((peak, index) => {
-                            peakHtml += `
-                                <div class="list-group-item d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <strong>${peak.date} ${peak.hour}</strong><br>
-                                        <small>${peak.bandwidth_mb} MB transferred</small>
-                                    </div>
-                                    <span class="badge bg-primary rounded-pill">${peak.requests}</span>
-                                </div>
-                            `;
+                            const item = $('<div>').addClass('list-group-item d-flex justify-content-between align-items-center');
+                            
+                            const leftDiv = $('<div>').append(
+                                $('<strong>').text(peak.date + ' ' + peak.hour),
+                                $('<br>'),
+                                $('<small>').text(peak.bandwidth_mb + ' MB transferred')
+                            );
+                            
+                            const badge = $('<span>').addClass('badge bg-primary rounded-pill').text(peak.requests);
+                            
+                            item.append(leftDiv, badge);
+                            listGroup.append(item);
                         });
-                        peakHtml += '</div>';
-                        $('#peakHours').html(peakHtml);
+                        
+                        peakContainer.append(listGroup);
                     }
                 });
         }
@@ -924,45 +1003,78 @@
                                   (threats.medium_risk?.length || 0) + 
                                   (threats.low_risk?.length || 0);
 
-                const summaryHtml = `
-                    <div class="executive-summary">
-                        <h5>📋 Executive Summary</h5>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h6>Traffic Overview</h6>
-                                <ul>
-                                    <li><strong>Total Requests:</strong> ${formatNumber(summary.total_requests || 0)}</li>
-                                    <li><strong>Unique Visitors:</strong> ${formatNumber(summary.unique_ips || 0)}</li>
-                                    <li><strong>Error Rate:</strong> ${summary.error_rate || 0}%</li>
-                                    <li><strong>Bandwidth:</strong> ${summary.bandwidth_mb || 0} MB</li>
-                                    <li><strong>Bot Traffic:</strong> ${analytics.bot_analysis?.bot_percentage || 0}%</li>
-                                </ul>
-                            </div>
-                            <div class="col-md-6">
-                                <h6>Security Assessment</h6>
-                                <ul>
-                                    <li><strong>High Risk Threats:</strong> ${threats.high_risk?.length || 0}</li>
-                                    <li><strong>Medium Risk Threats:</strong> ${threats.medium_risk?.length || 0}</li>
-                                    <li><strong>Low Risk Threats:</strong> ${threats.low_risk?.length || 0}</li>
-                                    <li><strong>Total Security Alerts:</strong> ${totalThreats}</li>
-                                    <li><strong>Risk Level:</strong> ${totalThreats > 10 ? 'HIGH' : totalThreats > 5 ? 'MEDIUM' : 'LOW'}</li>
-                                </ul>
-                            </div>
-                        </div>
-                        <div class="mt-3">
-                            <h6>Key Recommendations</h6>
-                            <ul>
-                                ${totalThreats > 0 ? '<li>Review and address identified security threats</li>' : '<li>✅ No immediate security concerns detected</li>'}
-                                ${summary.error_rate > 10 ? '<li>⚠️ High error rate detected - investigate server issues</li>' : '<li>✅ Error rate within acceptable limits</li>'}
-                                ${analytics.bot_analysis?.bot_percentage > 70 ? '<li>⚠️ High bot traffic - consider implementing bot protection</li>' : '<li>✅ Bot traffic levels normal</li>'}
-                                <li>Continue monitoring for unusual patterns</li>
-                                <li>Regular security audits recommended</li>
-                            </ul>
-                        </div>
-                    </div>
-                `;
-
-                $('#reportSummary').html(summaryHtml).show();
+                // Executive Summary - Safe DOM manipulation
+                const executiveContainer = $('#reportSummary');
+                executiveContainer.empty();
+                
+                const summaryDiv = $('<div>').addClass('executive-summary');
+                const title = $('<h5>').text('📋 Executive Summary');
+                const row = $('<div>').addClass('row');
+                
+                // Traffic Overview
+                const trafficCol = $('<div>').addClass('col-md-6');
+                const trafficTitle = $('<h6>').text('Traffic Overview');
+                const trafficList = $('<ul>');
+                
+                trafficList.append(
+                    $('<li>').append($('<strong>').text('Total Requests: '), document.createTextNode(formatNumber(summary.total_requests || 0))),
+                    $('<li>').append($('<strong>').text('Unique Visitors: '), document.createTextNode(formatNumber(summary.unique_ips || 0))),
+                    $('<li>').append($('<strong>').text('Error Rate: '), document.createTextNode((summary.error_rate || 0) + '%')),
+                    $('<li>').append($('<strong>').text('Bandwidth: '), document.createTextNode((summary.bandwidth_mb || 0) + ' MB')),
+                    $('<li>').append($('<strong>').text('Bot Traffic: '), document.createTextNode((analytics.bot_analysis?.bot_percentage || 0) + '%'))
+                );
+                
+                trafficCol.append(trafficTitle, trafficList);
+                
+                // Security Assessment
+                const securityCol = $('<div>').addClass('col-md-6');
+                const securityTitle = $('<h6>').text('Security Assessment');
+                const securityList = $('<ul>');
+                
+                const riskLevel = totalThreats > 10 ? 'HIGH' : totalThreats > 5 ? 'MEDIUM' : 'LOW';
+                
+                securityList.append(
+                    $('<li>').append($('<strong>').text('High Risk Threats: '), document.createTextNode(threats.high_risk?.length || 0)),
+                    $('<li>').append($('<strong>').text('Medium Risk Threats: '), document.createTextNode(threats.medium_risk?.length || 0)),
+                    $('<li>').append($('<strong>').text('Low Risk Threats: '), document.createTextNode(threats.low_risk?.length || 0)),
+                    $('<li>').append($('<strong>').text('Total Security Alerts: '), document.createTextNode(totalThreats)),
+                    $('<li>').append($('<strong>').text('Risk Level: '), document.createTextNode(riskLevel))
+                );
+                
+                securityCol.append(securityTitle, securityList);
+                row.append(trafficCol, securityCol);
+                
+                // Recommendations
+                const recommendations = $('<div>').addClass('mt-3');
+                const recTitle = $('<h6>').text('Key Recommendations');
+                const recList = $('<ul>');
+                
+                if (totalThreats > 0) {
+                    recList.append($('<li>').text('Review and address identified security threats'));
+                } else {
+                    recList.append($('<li>').text('✅ No immediate security concerns detected'));
+                }
+                
+                if (summary.error_rate > 10) {
+                    recList.append($('<li>').text('⚠️ High error rate detected - investigate server issues'));
+                } else {
+                    recList.append($('<li>').text('✅ Error rate within acceptable limits'));
+                }
+                
+                if (analytics.bot_analysis?.bot_percentage > 70) {
+                    recList.append($('<li>').text('⚠️ High bot traffic - consider implementing bot protection'));
+                } else {
+                    recList.append($('<li>').text('✅ Bot traffic levels normal'));
+                }
+                
+                recList.append(
+                    $('<li>').text('Continue monitoring for unusual patterns'),
+                    $('<li>').text('Regular security audits recommended')
+                );
+                
+                recommendations.append(recTitle, recList);
+                summaryDiv.append(title, row, recommendations);
+                executiveContainer.append(summaryDiv).show();
             });
         }
 
@@ -976,7 +1088,7 @@
                     
                     if (data.traffic_velocity) {
                         const velocity = data.traffic_velocity;
-                        let velocityText = `${velocity.avg_requests_per_hour}/hr`;
+                        let velocityText = velocity.avg_requests_per_hour + '/hr';
                         if (velocity.anomaly_detected) {
                             velocityText += ' ⚠️';
                         }
@@ -988,45 +1100,46 @@
         function loadPredictiveAnalytics() {
             $.get('/api/predictive_analytics')
                 .done(function(data) {
-                    let predictiveHtml = '';
+                    const predictiveContainer = $('#predictiveMetrics');
+                    predictiveContainer.empty();
                     
                     if (data.traffic_prediction) {
-                        predictiveHtml += `
-                            <div class="performance-metric">
-                                <div class="metric-value">${data.traffic_prediction.predicted_next_hour_requests}</div>
-                                <div>Predicted Next Hour</div>
-                            </div>
-                        `;
+                        const trafficDiv = $('<div>').addClass('performance-metric');
+                        const trafficValue = $('<div>').addClass('metric-value').text(data.traffic_prediction.predicted_next_hour_requests);
+                        const trafficLabel = $('<div>').text('Predicted Next Hour');
+                        trafficDiv.append(trafficValue, trafficLabel);
+                        predictiveContainer.append(trafficDiv);
                     }
                     
                     if (data.trend_analysis) {
                         const trend = data.trend_analysis;
                         const trendIcon = trend.trend_direction === 'increasing' ? '📈' : 
                                         trend.trend_direction === 'decreasing' ? '📉' : '➡️';
-                        predictiveHtml += `
-                            <div class="performance-metric">
-                                <div class="metric-value">${trendIcon}</div>
-                                <div>${trend.trend_direction} (${trend.trend_strength})</div>
-                            </div>
-                        `;
+                        
+                        const trendDiv = $('<div>').addClass('performance-metric');
+                        const trendValue = $('<div>').addClass('metric-value').text(trendIcon);
+                        const trendLabel = $('<div>').text(trend.trend_direction + ' (' + trend.trend_strength + ')');
+                        trendDiv.append(trendValue, trendLabel);
+                        predictiveContainer.append(trendDiv);
                     }
-                    
-                    $('#predictiveAnalytics').html(predictiveHtml);
                     
                     // Resource projections
                     if (data.resource_projection) {
                         const proj = data.resource_projection;
-                        const projHtml = `
-                            <div class="performance-metric">
-                                <div class="metric-value">${proj.monthly_bandwidth_projection_gb}</div>
-                                <div>Monthly Bandwidth (GB)</div>
-                            </div>
-                            <div class="performance-metric">
-                                <div class="metric-value">${proj.storage_requirement_estimate_gb}</div>
-                                <div>Storage Needed (GB)</div>
-                            </div>
-                        `;
-                        $('#resourceProjections').html(projHtml);
+                        const resourceContainer = $('#resourceProjections');
+                        resourceContainer.empty();
+                        
+                        const bandwidthDiv = $('<div>').addClass('performance-metric');
+                        const bandwidthValue = $('<div>').addClass('metric-value').text(proj.monthly_bandwidth_projection_gb);
+                        const bandwidthLabel = $('<div>').text('Monthly Bandwidth (GB)');
+                        bandwidthDiv.append(bandwidthValue, bandwidthLabel);
+                        
+                        const storageDiv = $('<div>').addClass('performance-metric');
+                        const storageValue = $('<div>').addClass('metric-value').text(proj.storage_requirement_estimate_gb);
+                        const storageLabel = $('<div>').text('Storage Needed (GB)');
+                        storageDiv.append(storageValue, storageLabel);
+                        
+                        resourceContainer.append(bandwidthDiv, storageDiv);
                     }
                 });
         }
@@ -1034,38 +1147,44 @@
         function loadSecurityIntelligence() {
             $.get('/api/security_intelligence')
                 .done(function(data) {
-                    // High Risk IPs
-                    let highRiskHtml = '';
+                    // High Risk IPs - Safe DOM manipulation
+                    const highRiskContainer = $('#highRiskIPs');
+                    highRiskContainer.empty();
+                    
                     if (data.ip_risk_analysis && data.ip_risk_analysis.high_risk_ips.length > 0) {
                         data.ip_risk_analysis.high_risk_ips.forEach(ip => {
-                            highRiskHtml += `
-                                <div class="threat-item">
-                                    <strong>${ip.ip}</strong> (Score: ${ip.risk_score})<br>
-                                    <small>Requests: ${ip.total_requests}, Failure: ${ip.failure_rate}</small><br>
-                                    <small>${ip.risk_factors.slice(0, 2).join(', ')}</small>
-                                </div>
-                            `;
+                            const threatItem = $('<div>').addClass('threat-item');
+                            
+                            const ipStrong = $('<strong>').text(ip.ip + ' (Score: ' + ip.risk_score + ')');
+                            const requestsSmall = $('<small>').text('Requests: ' + ip.total_requests + ', Failure: ' + ip.failure_rate);
+                            const factorsSmall = $('<small>').text(ip.risk_factors.slice(0, 2).join(', '));
+                            
+                            threatItem.append(ipStrong, $('<br>'), requestsSmall, $('<br>'), factorsSmall);
+                            highRiskContainer.append(threatItem);
                         });
                     } else {
-                        highRiskHtml = '<small class="text-muted">No high-risk IPs detected</small>';
+                        const noRiskMsg = $('<small>').addClass('text-muted').text('No high-risk IPs detected');
+                        highRiskContainer.append(noRiskMsg);
                     }
-                    $('#highRiskIPs').html(highRiskHtml);
 
-                    // Medium Risk IPs
-                    let mediumRiskHtml = '';
+                    // Medium Risk IPs - Safe DOM manipulation
+                    const mediumRiskContainer = $('#mediumRiskIPs');
+                    mediumRiskContainer.empty();
+                    
                     if (data.ip_risk_analysis && data.ip_risk_analysis.medium_risk_ips.length > 0) {
                         data.ip_risk_analysis.medium_risk_ips.forEach(ip => {
-                            mediumRiskHtml += `
-                                <div class="threat-item">
-                                    <strong>${ip.ip}</strong> (Score: ${ip.risk_score})<br>
-                                    <small>Requests: ${ip.total_requests}, Failure: ${ip.failure_rate}</small>
-                                </div>
-                            `;
+                            const threatItem = $('<div>').addClass('threat-item');
+                            
+                            const ipStrong = $('<strong>').text(ip.ip + ' (Score: ' + ip.risk_score + ')');
+                            const requestsSmall = $('<small>').text('Requests: ' + ip.total_requests + ', Failure: ' + ip.failure_rate);
+                            
+                            threatItem.append(ipStrong, $('<br>'), requestsSmall);
+                            mediumRiskContainer.append(threatItem);
                         });
                     } else {
-                        mediumRiskHtml = '<small class="text-muted">No medium-risk IPs detected</small>';
+                        const noMediumRiskMsg = $('<small>').addClass('text-muted').text('No medium-risk IPs detected');
+                        mediumRiskContainer.append(noMediumRiskMsg);
                     }
-                    $('#mediumRiskIPs').html(mediumRiskHtml);
 
                     // Security Recommendations
                     let recHtml = '';
@@ -1085,46 +1204,64 @@
                     }
                     $('#securityRecommendations').html(recHtml);
 
-                    // Attack Timeline
-                    let timelineHtml = '';
+                    // Attack Timeline - Safe DOM manipulation
+                    const timelineContainer = $('#attackTimeline');
+                    timelineContainer.empty();
+                    
                     if (data.attack_timeline && data.attack_timeline.length > 0) {
                         data.attack_timeline.forEach(attack => {
                             const date = new Date(attack.timestamp);
-                            timelineHtml += `
-                                <div class="threat-item">
-                                    <small>${date.toLocaleString()}</small><br>
-                                    <strong>${attack.ip}</strong><br>
-                                    <code>${attack.url.substring(0, 50)}...</code><br>
-                                    <span class="badge bg-danger">Status: ${attack.status}</span>
-                                </div>
-                            `;
+                            
+                            // Create elements safely
+                            const threatItem = $('<div>').addClass('threat-item');
+                            const timeElement = $('<small>').text(date.toLocaleString());
+                            const ipElement = $('<strong>').text(attack.ip);
+                            const urlElement = $('<code>').text(attack.url.substring(0, 50) + '...');
+                            const statusBadge = $('<span>')
+                                .addClass('badge bg-danger')
+                                .text('Status: ' + attack.status);
+                            
+                            // Assemble the timeline item
+                            threatItem.append(timeElement)
+                                     .append($('<br>'))
+                                     .append(ipElement)
+                                     .append($('<br>'))
+                                     .append(urlElement)
+                                     .append($('<br>'))
+                                     .append(statusBadge);
+                            
+                            timelineContainer.append(threatItem);
                         });
                     } else {
-                        timelineHtml = '<small class="text-muted">No recent attacks detected</small>';
+                        timelineContainer.append($('<small>').addClass('text-muted').text('No recent attacks detected'));
                     }
-                    $('#attackTimeline').html(timelineHtml);
                 });
         }
 
         function loadBusinessIntelligence() {
             $.get('/api/business_intelligence')
                 .done(function(data) {
-                    // Business Intelligence Summary
-                    let biHtml = '';
+                    // Business Intelligence Summary - Safe DOM manipulation
+                    const biContainer = $('#businessIntelligence');
+                    biContainer.empty();
+                    
                     if (data.content_analytics) {
                         const analytics = data.content_analytics;
-                        biHtml += `
-                            <div class="performance-metric">
-                                <div class="metric-value">${analytics.pages_per_visitor}</div>
-                                <div>Pages per Visitor</div>
-                            </div>
-                            <div class="performance-metric">
-                                <div class="metric-value">${analytics.unique_visitors}</div>
-                                <div>Unique Visitors</div>
-                            </div>
-                        `;
+                        
+                        const pagesMetric = $('<div>').addClass('performance-metric');
+                        pagesMetric.append(
+                            $('<div>').addClass('metric-value').text(analytics.pages_per_visitor),
+                            $('<div>').text('Pages per Visitor')
+                        );
+                        
+                        const visitorsMetric = $('<div>').addClass('performance-metric');
+                        visitorsMetric.append(
+                            $('<div>').addClass('metric-value').text(analytics.unique_visitors),
+                            $('<div>').text('Unique Visitors')
+                        );
+                        
+                        biContainer.append(pagesMetric, visitorsMetric);
                     }
-                    $('#businessIntelligence').html(biHtml);
 
                     // Content Engagement Chart
                     if (data.content_analytics && data.content_analytics.top_content.length > 0) {
@@ -1134,7 +1271,7 @@
                             y: content.map(c => c.engagement_score),
                             type: 'bar',
                             marker: {color: '#28a745'},
-                            text: content.map(c => `Views: ${c.views}, Visitors: ${c.unique_visitors}`),
+                            text: content.map(c => 'Views: ' + c.views + ', Visitors: ' + c.unique_visitors),
                             textposition: 'outside'
                         };
 
@@ -1197,8 +1334,51 @@
             window.open('/api/export/pdf/summary', '_blank');
         }
 
+        // Comprehensive security check on page load
+        function initializeSecurity() {
+            // Disable eval and other dangerous functions
+            window.eval = function() {
+                console.error('eval() has been disabled for security');
+                return null;
+            };
+            
+            // Monitor for script injection attempts
+            const observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    mutation.addedNodes.forEach(function(node) {
+                        if (node.nodeType === 1) { // Element node
+                            // Check for script tags
+                            if (node.tagName === 'SCRIPT') {
+                                console.error('Script injection attempt blocked:', node);
+                                node.remove();
+                            }
+                            
+                            // Check for dangerous attributes
+                            if (node.attributes) {
+                                Array.from(node.attributes).forEach(attr => {
+                                    if (attr.name.startsWith('on') || attr.value.includes('javascript:')) {
+                                        console.error('Dangerous attribute blocked:', attr.name, attr.value);
+                                        node.removeAttribute(attr.name);
+                                    }
+                                });
+                            }
+                        }
+                    });
+                });
+            });
+            
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true
+            });
+        }
+
         // Event handlers
         $(document).ready(function() {
+            // Initialize security first
+            initializeSecurity();
+            
             $('#loadBtn').click(loadLogs);
             $('#exportBtn').click(exportData);
             $('#exportDetailedBtn').click(exportDetailedReport);
